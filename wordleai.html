@@ -3,6 +3,7 @@
 <html>
 <head>
 <meta charset="UTF-8">
+<title>AI Wordle Widget</title>
 <style>
 body {
   background: transparent;
@@ -29,7 +30,7 @@ font-size: 24px;
 font-weight: bold;
 border: 2px solid #444;
 text-transform: uppercase;
-transition: transform 0.3s ease;
+transition: transform 0.4s ease;
 }
 
 .green { background: #6aaa64; }
@@ -50,41 +51,51 @@ font-size: 18px;
 <body>
 
 <div id="board"></div>
-<div id="status"></div>
+<div id="status">Loading word list...</div>
 
 <script>
 // =========================
-// WORD LIST (expand later)
+// GLOBAL STATE
 // =========================
-const WORDS = [
-  "crane","slate","trace","adieu","roast","tears","stare","irate",
-  "arise","raise","later","alert","alter","learn","snare","stone",
-  "store","score","shore","spare","share","shard","chart","charm"
-];
-
-// =========================
-// GAME STATE
-// =========================
-let target = randomWord();
-let possibleWords = [...WORDS];
+let WORDS = [];
+let possibleWords = [];
+let target = "";
 let guesses = [];
 let turnDelay = 1500;
 
 // =========================
-// UTIL
+// LOAD FULL WORD LIST
+// =========================
+async function loadWords() {
+  const res = await fetch("https://raw.githubusercontent.com/tabatkins/wordle-list/main/words");
+  const text = await res.text();
+
+  WORDS = text.split("\n")
+    .map(w => w.trim().toLowerCase())
+    .filter(w => w.length === 5);
+
+  possibleWords = [...WORDS];
+
+  document.getElementById("status").innerText = "Loaded " + WORDS.length + " words!";
+
+  setTimeout(startGame, 1000);
+}
+
+// =========================
+// RANDOM WORD
 // =========================
 function randomWord() {
   return WORDS[Math.floor(Math.random() * WORDS.length)];
 }
 
 // =========================
-// FEEDBACK SYSTEM
+// WORDLE FEEDBACK
 // =========================
 function getFeedback(guess, target) {
   let result = Array(5).fill("gray");
   let targetArr = target.split("");
 
-  // Greens
+  // greens
   for (let i = 0; i < 5; i++) {
     if (guess[i] === target[i]) {
       result[i] = "green";
@@ -92,7 +103,7 @@ function getFeedback(guess, target) {
     }
   }
 
-  // Yellows
+  // yellows
   for (let i = 0; i < 5; i++) {
     if (result[i] === "gray" && targetArr.includes(guess[i])) {
       result[i] = "yellow";
@@ -104,29 +115,50 @@ function getFeedback(guess, target) {
 }
 
 // =========================
-// AI FILTER
+// FILTER WORDS
 // =========================
 function filterWords(words, guess, feedback) {
   return words.filter(word => {
+    let temp = word.split("");
+
+    // greens
     for (let i = 0; i < 5; i++) {
-      if (feedback[i] === "green" && word[i] !== guess[i]) return false;
-      if (feedback[i] === "yellow" && !word.includes(guess[i])) return false;
-      if (feedback[i] === "gray" && word.includes(guess[i])) return false;
+      if (feedback[i] === "green") {
+        if (word[i] !== guess[i]) return false;
+        temp[i] = null;
+      }
     }
+
+    // yellows
+    for (let i = 0; i < 5; i++) {
+      if (feedback[i] === "yellow") {
+        if (!temp.includes(guess[i])) return false;
+        temp[temp.indexOf(guess[i])] = null;
+      }
+    }
+
+    // grays
+    for (let i = 0; i < 5; i++) {
+      if (feedback[i] === "gray") {
+        if (temp.includes(guess[i])) return false;
+      }
+    }
+
     return true;
   });
 }
 
 // =========================
-// AI GUESS (better than random)
+// SMART AI GUESS
 // =========================
 function aiGuess() {
-  // prefer words with common letters
-  let letterFreq = {};
+  if (guesses.length === 0) return "slate"; // strong opener
+
+  let freq = {};
 
   possibleWords.forEach(word => {
-    for (let char of word) {
-      letterFreq[char] = (letterFreq[char] || 0) + 1;
+    for (let c of word) {
+      freq[c] = (freq[c] || 0) + 1;
     }
   });
 
@@ -137,10 +169,10 @@ function aiGuess() {
     let score = 0;
     let used = new Set();
 
-    for (let char of word) {
-      if (!used.has(char)) {
-        score += letterFreq[char];
-        used.add(char);
+    for (let c of word) {
+      if (!used.has(c)) {
+        score += freq[c];
+        used.add(c);
       }
     }
 
@@ -154,7 +186,7 @@ function aiGuess() {
 }
 
 // =========================
-// RENDER
+// RENDER BOARD
 // =========================
 function render() {
   const board = document.getElementById("board");
@@ -208,7 +240,7 @@ function endGame(win) {
   const status = document.getElementById("status");
 
   if (win) {
-    status.innerText = "AI solved it!";
+    status.innerText = "AI solved it in " + guesses.length + " moves!";
   } else {
     status.innerText = "Failed! Word was: " + target;
   }
@@ -217,7 +249,7 @@ function endGame(win) {
 }
 
 // =========================
-// RESET
+// RESET GAME
 // =========================
 function resetGame() {
   target = randomWord();
@@ -230,9 +262,22 @@ function resetGame() {
 }
 
 // =========================
-// START
+// START GAME
 // =========================
-playTurn();
+function startGame() {
+  target = randomWord();
+  guesses = [];
+  possibleWords = [...WORDS];
+  document.getElementById("status").innerText = "";
+  render();
+
+  setTimeout(playTurn, 1000);
+}
+
+// =========================
+// INIT
+// =========================
+loadWords();
 
 </script>
 
